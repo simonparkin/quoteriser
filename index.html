@@ -96,6 +96,17 @@
     border:1px solid var(--border);padding:10px 18px;border-radius:10px;font-size:14px;opacity:0;
     pointer-events:none;transition:opacity .25s;z-index:30;}
   .toast.show{opacity:1;}
+  .history-entry{background:var(--panel);border:1px solid var(--border);border-radius:12px;margin-bottom:10px;overflow:hidden;}
+  .history-entry-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;cursor:pointer;gap:10px;}
+  .history-entry-head .h-label{font-weight:700;font-size:15px;}
+  .history-entry-head .h-date{font-size:12px;color:var(--muted);margin-top:2px;display:block;}
+  .history-entry-head .h-total{font-weight:800;color:var(--accent2);font-size:16px;white-space:nowrap;}
+  .history-detail{padding:0 14px 14px;border-top:1px solid var(--border);display:none;}
+  .history-detail.open{display:block;padding-top:10px;}
+  .history-detail .hd-row{display:flex;justify-content:space-between;font-size:13px;padding:4px 0;color:var(--muted);}
+  .history-detail .hd-row span:last-child{color:var(--text);}
+  .history-actions{display:flex;gap:8px;margin-top:10px;}
+  .history-actions .btn{padding:9px;font-size:13px;}
 </style>
 </head>
 <body>
@@ -119,7 +130,21 @@
       <button class="btn warn" id="resetBtn">Reset</button>
     </div>
   </div>
+  <button class="btn ghost" id="historyBtn" style="width:100%;">📜 History</button>
 </main>
+
+<!-- History modal -->
+<div class="modal-backdrop" id="historyBackdrop"></div>
+<div class="modal" id="historyModal">
+  <div class="modal-header">
+    <h2>History</h2>
+    <button class="icon-btn" id="closeHistory">✕</button>
+  </div>
+  <div class="modal-body">
+    <button class="add-btn" id="saveHistoryBtn">+ Save current quote</button>
+    <div id="historyList" style="margin-top:14px;"></div>
+  </div>
+</div>
 
 <!-- Settings modal -->
 <div class="modal-backdrop" id="backdrop"></div>
@@ -160,14 +185,17 @@ const DEFAULT_ITEMS = [
   {id:'conservatory', title:'Conservatory Windows', type:'counter', multiplier:1}
 ];
 
-// frequency: {id,label,visitsPerYear (null = one-off/multiplier), discountPercent, oneOffMultiplier}
+// frequency: {id,label,mode:'direct'|'annualized'|'multiplier',visitsPerYear,discountPercent,oneOffMultiplier}
+// direct: price = monthly * (1 - discountPercent/100)   -- covers the baseline travel/resource cost every visit
+// annualized: price = (monthly*12*(1-discountPercent/100)) / visitsPerYear
+// multiplier: price = monthly * oneOffMultiplier
 const DEFAULT_FREQS = [
-  {id:'4weekly',   label:'Monthly', visitsPerYear:12, discountPercent:0},
-  {id:'8weekly',   label:'Bimonthly', visitsPerYear:6, discountPercent:30},
-  {id:'weekly',    label:'Weekly',    visitsPerYear:52, discountPercent:20},
-  {id:'fortnight', label:'Fortnightly', visitsPerYear:26, discountPercent:10},
-  {id:'oneoff',    label:'One-off', visitsPerYear:null, oneOffMultiplier:2},
-  {id:'insides',   label:'Insides', visitsPerYear:null, oneOffMultiplier:1.5}
+  {id:'4weekly',   label:'Monthly',     mode:'direct',     visitsPerYear:12, discountPercent:0},
+  {id:'8weekly',   label:'Bimonthly',   mode:'annualized', visitsPerYear:6,  discountPercent:30},
+  {id:'weekly',    label:'Weekly',      mode:'direct',     visitsPerYear:52, discountPercent:20},
+  {id:'fortnight', label:'Fortnightly', mode:'direct',     visitsPerYear:26, discountPercent:10},
+  {id:'oneoff',    label:'One-off',     mode:'multiplier', visitsPerYear:null, oneOffMultiplier:2},
+  {id:'insides',   label:'Insides',     mode:'multiplier', visitsPerYear:null, oneOffMultiplier:1.5}
 ];
 
 function load(key, fallback){
@@ -207,12 +235,16 @@ function monthlyTotal(){
 }
 
 function frequencyPrice(freq, monthly){
-  if(freq.visitsPerYear === null){
-    // one-off
+  if(freq.mode === 'multiplier'){
     return monthly * (freq.oneOffMultiplier ?? 1);
   }
-  const annual = monthly * 12 * (1 - (freq.discountPercent||0)/100);
-  return annual / freq.visitsPerYear;
+  if(freq.mode === 'annualized'){
+    const annual = monthly * 12 * (1 - (freq.discountPercent||0)/100);
+    return annual / freq.visitsPerYear;
+  }
+  // direct: straight discount off the monthly price, no annual division —
+  // every visit still carries the baseline travel/resource cost
+  return monthly * (1 - (freq.discountPercent||0)/100);
 }
 
 /* ---------------- Rendering: main screen ---------------- */
@@ -299,9 +331,11 @@ function renderTotals(){
   big.textContent = '£' + frequencyPrice(active, monthly).toFixed(2);
   const meta = document.createElement('div');
   meta.className = 'big-meta';
-  meta.textContent = active.visitsPerYear === null
+  meta.textContent = active.mode === 'multiplier'
     ? `×${active.oneOffMultiplier ?? 1} of monthly total`
-    : `${active.visitsPerYear}/yr · ${active.discountPercent||0}% discount`;
+    : active.mode === 'annualized'
+      ? `${active.visitsPerYear}/yr · ${active.discountPercent||0}% discount`
+      : ((active.discountPercent||0) > 0 ? `${active.discountPercent}% off monthly` : 'Full monthly price');
   wrap.append(big, meta);
   totalDisplayEl.appendChild(wrap);
 }
@@ -427,7 +461,7 @@ function renderFreqEditor(){
     labelField.textContent = freq.label;
     row.appendChild(labelField);
 
-    const isMultiplier = freq.visitsPerYear === null;
+    const isMultiplier = freq.mode === 'multiplier';
     const pctField = document.createElement('div');
     pctField.className = 'price-field pct-field';
     const pctInput = document.createElement('input');
@@ -464,6 +498,205 @@ document.getElementById('restoreDefaultsBtn').onclick = ()=>{
     showToast('Defaults restored');
   }
 };
+
+/* ---------------- History ---------------- */
+const STORAGE_HISTORY = 'quoteriser:history';
+let historyEntries = load(STORAGE_HISTORY, []);
+let expandedHistoryId = null;
+
+const historyBackdrop = document.getElementById('historyBackdrop');
+const historyModal = document.getElementById('historyModal');
+const historyListEl = document.getElementById('historyList');
+
+function openHistory(){
+  renderHistory();
+  historyBackdrop.classList.add('open');
+  historyModal.classList.add('open');
+}
+function closeHistory(){
+  historyBackdrop.classList.remove('open');
+  historyModal.classList.remove('open');
+}
+document.getElementById('historyBtn').onclick = openHistory;
+document.getElementById('closeHistory').onclick = closeHistory;
+historyBackdrop.onclick = closeHistory;
+
+function getRoadNameLabel(){
+  if(!navigator.geolocation) return Promise.resolve(null);
+  return new Promise((resolve)=>{
+    navigator.geolocation.getCurrentPosition(
+      async (pos)=>{
+        try{
+          const {latitude, longitude} = pos.coords;
+          const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=17&addressdetails=1`;
+          const res = await fetch(url, {headers:{'Accept':'application/json'}});
+          const data = await res.json();
+          const a = data && data.address ? data.address : {};
+          const road = a.road || a.pedestrian || a.footway || a.residential || null;
+          resolve(road);
+        }catch(e){
+          resolve(null);
+        }
+      },
+      ()=> resolve(null),
+      {enableHighAccuracy:true, timeout:8000}
+    );
+  });
+}
+
+document.getElementById('saveHistoryBtn').onclick = async ()=>{
+  const btn = document.getElementById('saveHistoryBtn');
+  const originalText = btn.textContent;
+  btn.textContent = 'Locating…';
+  btn.disabled = true;
+  const roadName = await getRoadNameLabel();
+  btn.textContent = originalText;
+  btn.disabled = false;
+
+  const suggested = roadName || new Date().toLocaleString();
+  const label = prompt('Label this quote (edit if needed):', suggested);
+  if(label === null) return; // cancelled
+  const entry = {
+    id: uid('hist'),
+    savedAt: Date.now(),
+    label: (label && label.trim()) ? label.trim() : suggested,
+    items: JSON.parse(JSON.stringify(items)),
+    values: JSON.parse(JSON.stringify(values)),
+    freqs: JSON.parse(JSON.stringify(freqs))
+  };
+  historyEntries.unshift(entry);
+  save(STORAGE_HISTORY, historyEntries);
+  renderHistory();
+  showToast('Quote saved to history');
+};
+
+function escapeHtml(str){
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function historyItemValue(it, v){
+  if(it.type === 'counter') return v * (it.multiplier || 0);
+  const c = it.choices ? it.choices[v] : null;
+  return c ? c.value : 0;
+}
+
+function historyMonthly(entry){
+  return entry.items.reduce((sum, it)=> sum + historyItemValue(it, entry.values[it.id] || 0), 0);
+}
+
+function renderHistory(){
+  historyListEl.innerHTML = '';
+  if(historyEntries.length === 0){
+    const empty = document.createElement('div');
+    empty.style.cssText = 'text-align:center;color:var(--muted);padding:24px 0;font-size:14px;';
+    empty.textContent = 'No saved quotes yet.';
+    historyListEl.appendChild(empty);
+    return;
+  }
+  historyEntries.forEach(entry=>{
+    const monthly = historyMonthly(entry);
+    const box = document.createElement('div');
+    box.className = 'history-entry';
+
+    const head = document.createElement('div');
+    head.className = 'history-entry-head';
+    head.innerHTML = `<div><div class="h-label">${escapeHtml(entry.label)}</div>` +
+      `<span class="h-date">${new Date(entry.savedAt).toLocaleString()}</span></div>` +
+      `<div class="h-total">£${monthly.toFixed(2)}</div>`;
+    head.onclick = ()=>{
+      expandedHistoryId = (expandedHistoryId === entry.id) ? null : entry.id;
+      renderHistory();
+    };
+    box.appendChild(head);
+
+    const detail = document.createElement('div');
+    detail.className = 'history-detail' + (expandedHistoryId === entry.id ? ' open' : '');
+
+    entry.items.forEach(it=>{
+      const v = entry.values[it.id] || 0;
+      const val = historyItemValue(it, v);
+      if(v === 0) return;
+      const qtyLabel = it.type === 'counter' ? `${v} ×` : ((it.choices && it.choices[v]) ? it.choices[v].label : '');
+      const row = document.createElement('div');
+      row.className = 'hd-row';
+      row.innerHTML = `<span>${escapeHtml(it.title)} (${escapeHtml(String(qtyLabel))})</span><span>£${val.toFixed(2)}</span>`;
+      detail.appendChild(row);
+    });
+
+    (entry.freqs || []).forEach(freq=>{
+      const price = frequencyPrice(freq, monthly);
+      const row = document.createElement('div');
+      row.className = 'hd-row';
+      row.innerHTML = `<span>${escapeHtml(freq.label)}</span><span>£${price.toFixed(2)}</span>`;
+      detail.appendChild(row);
+    });
+
+    const actions = document.createElement('div');
+    actions.className = 'history-actions';
+    const loadBtn = document.createElement('button');
+    loadBtn.className = 'btn primary';
+    loadBtn.textContent = 'Load into current quote';
+    loadBtn.onclick = (e)=>{
+      e.stopPropagation();
+      entry.items.forEach(it=>{
+        if(items.some(i=>i.id === it.id)){
+          values[it.id] = entry.values[it.id] || 0;
+        }
+      });
+      commitValues();
+      closeHistory();
+      showToast('Quote loaded');
+    };
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn danger';
+    delBtn.textContent = 'Delete';
+    delBtn.onclick = (e)=>{
+      e.stopPropagation();
+      historyEntries = historyEntries.filter(h=> h.id !== entry.id);
+      save(STORAGE_HISTORY, historyEntries);
+      renderHistory();
+    };
+    actions.append(loadBtn, delBtn);
+    detail.appendChild(actions);
+
+    box.appendChild(detail);
+    historyListEl.appendChild(box);
+  });
+}
+
+/* ---------------- Idle auto-save ---------------- */
+const IDLE_TIMEOUT_MS = 30000; // 30 seconds since the last button press
+let idleTimer = null;
+
+function armIdleTimer(){
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(autoSaveToHistory, IDLE_TIMEOUT_MS);
+}
+
+async function autoSaveToHistory(){
+  if(monthlyTotal() <= 0) return; // nothing entered yet, nothing to save
+  const roadName = await getRoadNameLabel();
+  const entry = {
+    id: uid('hist'),
+    savedAt: Date.now(),
+    label: roadName || new Date().toLocaleString(),
+    items: JSON.parse(JSON.stringify(items)),
+    values: JSON.parse(JSON.stringify(values)),
+    freqs: JSON.parse(JSON.stringify(freqs))
+  };
+  historyEntries.unshift(entry);
+  save(STORAGE_HISTORY, historyEntries);
+  showToast('Auto-saved to history');
+}
+
+// any button press anywhere in the app resets the idle clock
+document.addEventListener('click', (e)=>{
+  if(e.target.closest('button')) armIdleTimer();
+}, true);
+
+armIdleTimer();
 
 /* ---------------- Toast ---------------- */
 let toastTimer;
