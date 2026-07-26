@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Quoteriser</title>
+<style>
+  :root{
+    --bg:#0f1115;
+    --panel:#1a1d24;
+    --panel2:#22262f;
+    --border:#2c313c;
+    --text:#eef0f3;
+    --muted:#9aa3b2;
+    --accent:#3d8bfd;
+    --accent2:#2ecf88;
+    --warn:#f0a83c;
+    --danger:#e0525f;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  body{padding-bottom:40px;}
+  header{position:sticky;top:0;z-index:10;background:rgba(15,17,21,.92);backdrop-filter:blur(6px);
+    display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--border);}
+  header h1{font-size:20px;margin:0;font-weight:700;letter-spacing:.2px;}
+  header h1 span{color:var(--accent);}
+  .icon-btn{background:var(--panel2);border:1px solid var(--border);color:var(--text);
+    width:40px;height:40px;border-radius:10px;font-size:18px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+  .icon-btn:active{transform:scale(.95);}
+  main{max-width:640px;margin:0 auto;padding:16px;}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:14px;}
+  .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin:0 0 10px;}
+  .item-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);gap:10px;}
+  .item-row:last-child{border-bottom:none;}
+  .item-title{font-size:16px;font-weight:600;flex:1;min-width:0;}
+  .stepper{display:flex;align-items:center;gap:10px;}
+  .stepper button{width:34px;height:34px;border-radius:9px;border:1px solid var(--border);background:var(--panel2);
+    color:var(--text);font-size:18px;font-weight:700;cursor:pointer;line-height:1;}
+  .stepper button:active{transform:scale(.93);}
+  .stepper .qty{min-width:20px;text-align:center;font-size:16px;font-weight:700;}
+  .item-value{min-width:64px;text-align:right;color:var(--accent2);font-weight:700;font-size:15px;}
+  select.choice-select{background:var(--panel2);color:var(--text);border:1px solid var(--border);
+    border-radius:9px;padding:8px 10px;font-size:15px;}
+  .totals-row{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border);}
+  .totals-row:last-child{border-bottom:none;}
+  .totals-row .flabel{font-weight:600;}
+  .totals-row .fmeta{display:block;font-size:12px;color:var(--muted);margin-top:2px;}
+  .totals-row .fvalue{font-size:18px;font-weight:800;color:var(--accent);}
+  .tabs{display:flex;flex-wrap:wrap;gap:6px;padding-bottom:4px;}
+  .tab-btn{flex:0 0 auto;padding:8px 12px;border-radius:9px;border:1px solid var(--border);background:var(--panel2);
+    color:var(--muted);font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;}
+  .tab-btn.active{background:rgba(61,139,253,.18);border-color:var(--accent);color:var(--accent);}
+  .total-display{text-align:center;padding:22px 10px 8px;}
+  .total-display .big-value{font-size:40px;font-weight:800;color:var(--accent2);letter-spacing:-.5px;}
+  .total-display .big-meta{font-size:13px;color:var(--muted);margin-top:6px;}
+  .actions{display:flex;gap:10px;margin-top:6px;}
+  .btn{flex:1;padding:12px;border-radius:11px;border:1px solid var(--border);background:var(--panel2);
+    color:var(--text);font-size:15px;font-weight:700;cursor:pointer;text-align:center;}
+  .btn.warn{background:rgba(240,168,60,.12);border-color:rgba(240,168,60,.4);color:var(--warn);}
+  .btn.primary{background:rgba(61,139,253,.15);border-color:rgba(61,139,253,.5);color:var(--accent);}
+  .btn.danger{background:rgba(224,82,95,.12);border-color:rgba(224,82,95,.4);color:var(--danger);}
+  .btn.ghost{background:transparent;}
+  .btn:active{transform:scale(.98);}
+
+  /* Settings modal */
+  .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:20;display:none;}
+  .modal-backdrop.open{display:block;}
+  .modal{position:fixed;left:0;right:0;bottom:0;top:6%;background:var(--bg);z-index:21;
+    border-radius:18px 18px 0 0;display:flex;flex-direction:column;transform:translateY(100%);transition:transform .25s ease;}
+  .modal.open{transform:translateY(0);}
+  .modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--border);}
+  .modal-header h2{margin:0;font-size:17px;}
+  .modal-body{overflow-y:auto;padding:16px 16px 90px;flex:1;}
+  .settings-item{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px;}
+  .settings-item .row{display:flex;gap:8px;align-items:center;margin-bottom:8px;}
+  .settings-item .row:last-child{margin-bottom:0;}
+  .settings-item input[type=text],.settings-item input[type=number]{
+    background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:8px;
+    padding:8px 10px;font-size:14px;width:100%;}
+  .settings-item label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px;}
+  .field{flex:1;min-width:0;}
+  .field.small{flex:0 0 90px;}
+  .price-field{flex:0 0 84px;display:flex;align-items:center;background:var(--panel2);border:1px solid var(--border);
+    border-radius:8px;padding:0 8px;}
+  .price-field.pct-field{flex:0 0 96px;}
+  .price-field .pound-sign{color:var(--muted);font-size:14px;margin-right:2px;}
+  .price-field input{background:transparent;border:none;color:var(--text);padding:8px 0;font-size:14px;width:100%;min-width:0;}
+  .price-field input:focus{outline:none;}
+  .remove-x{background:none;border:none;color:var(--danger);font-size:18px;cursor:pointer;padding:2px 6px;}
+  .section-title{font-size:13px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin:18px 0 10px;}
+  .add-btn{width:100%;padding:12px;border-radius:11px;border:1px dashed var(--border);background:transparent;
+    color:var(--accent);font-weight:700;cursor:pointer;font-size:14px;margin-top:4px;}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--panel2);
+    border:1px solid var(--border);padding:10px 18px;border-radius:10px;font-size:14px;opacity:0;
+    pointer-events:none;transition:opacity .25s;z-index:30;}
+  .toast.show{opacity:1;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Quote<span>riser</span></h1>
+  <button class="icon-btn" id="settingsBtn" aria-label="Settings">⚙️</button>
+</header>
+
+<main>
+  <div class="card">
+    <h2>House Features</h2>
+    <div id="itemsList"></div>
+  </div>
+
+  <div class="card">
+    <h2>Totals</h2>
+    <div class="tabs" id="freqTabs"></div>
+    <div id="totalDisplay"></div>
+    <div class="actions" style="margin-top:12px;">
+      <button class="btn warn" id="resetBtn">Reset</button>
+    </div>
+  </div>
+</main>
+
+<!-- Settings modal -->
+<div class="modal-backdrop" id="backdrop"></div>
+<div class="modal" id="settingsModal">
+  <div class="modal-header">
+    <h2>Settings</h2>
+    <button class="icon-btn" id="closeSettings">✕</button>
+  </div>
+  <div class="modal-body">
+    <div class="section-title">Feature Types &amp; Prices</div>
+    <div id="itemsEditor"></div>
+    <button class="add-btn" id="addItemBtn">+ Add feature type</button>
+
+    <div class="section-title">Discounts &amp; Extras</div>
+    <div id="freqEditor"></div>
+
+    <div class="actions" style="margin-top:22px;">
+      <button class="btn ghost" id="restoreDefaultsBtn">Restore defaults</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------------- Data model ---------------- */
+const STORAGE_ITEMS = 'quoteriser:items';
+const STORAGE_FREQ    = 'quoteriser:frequencies';
+const STORAGE_VALUES = 'quoteriser:values';
+
+// item: {id, title, type:'counter'|'choice', multiplier (counter), choices:[{label,value}] (choice)}
+const DEFAULT_ITEMS = [
+  {id:'window',  title:'Window',         type:'counter', multiplier:1},
+  {id:'frosted', title:'Frosted Window', type:'counter', multiplier:0.5},
+  {id:'door',    title:'Door',           type:'counter', multiplier:1},
+  {id:'patio',   title:'Patio Door',     type:'counter', multiplier:2},
+  {id:'skylight',title:'Skylight',       type:'counter', multiplier:1},
+  {id:'conservatory', title:'Conservatory Windows', type:'counter', multiplier:1}
+];
+
+// frequency: {id,label,visitsPerYear (null = one-off/multiplier), discountPercent, oneOffMultiplier}
+const DEFAULT_FREQS = [
+  {id:'4weekly',   label:'Monthly', visitsPerYear:12, discountPercent:0},
+  {id:'8weekly',   label:'Bimonthly', visitsPerYear:6, discountPercent:30},
+  {id:'weekly',    label:'Weekly',    visitsPerYear:52, discountPercent:20},
+  {id:'fortnight', label:'Fortnightly', visitsPerYear:26, discountPercent:10},
+  {id:'oneoff',    label:'One-off', visitsPerYear:null, oneOffMultiplier:2},
+  {id:'insides',   label:'Insides', visitsPerYear:null, oneOffMultiplier:1.5}
+];
+
+function load(key, fallback){
+  try{
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  }catch(e){ return fallback; }
+}
+function save(key, val){
+  try{ localStorage.setItem(key, JSON.stringify(val)); }catch(e){}
+}
+
+let items = load(STORAGE_ITEMS, DEFAULT_ITEMS);
+let freqs = load(STORAGE_FREQ, DEFAULT_FREQS);
+let values = load(STORAGE_VALUES, {}); // {itemId: number}  counter=qty, choice=index
+
+function ensureValues(){
+  items.forEach(it=>{
+    if(values[it.id] === undefined) values[it.id] = 0;
+  });
+}
+ensureValues();
+
+/* ---------------- Calculation ---------------- */
+function itemValue(item){
+  const v = values[item.id] || 0;
+  if(item.type === 'counter'){
+    return v * (item.multiplier || 0);
+  } else {
+    const choice = item.choices[v];
+    return choice ? choice.value : 0;
+  }
+}
+
+function monthlyTotal(){
+  return items.reduce((sum, it)=> sum + itemValue(it), 0);
+}
+
+function frequencyPrice(freq, monthly){
+  if(freq.visitsPerYear === null){
+    // one-off
+    return monthly * (freq.oneOffMultiplier ?? 1);
+  }
+  const annual = monthly * 12 * (1 - (freq.discountPercent||0)/100);
+  return annual / freq.visitsPerYear;
+}
+
+/* ---------------- Rendering: main screen ---------------- */
+const itemsListEl = document.getElementById('itemsList');
+
+function renderItems(){
+  itemsListEl.innerHTML = '';
+  items.forEach(item=>{
+    const row = document.createElement('div');
+    row.className = 'item-row';
+
+    const title = document.createElement('div');
+    title.className = 'item-title';
+    title.textContent = item.title;
+    row.appendChild(title);
+
+    if(item.type === 'counter'){
+      const stepper = document.createElement('div');
+      stepper.className = 'stepper';
+      const minus = document.createElement('button');
+      minus.textContent = '–';
+      minus.onclick = ()=>{ values[item.id] = Math.max(0,(values[item.id]||0)-1); commitValues(); };
+      const qty = document.createElement('div');
+      qty.className = 'qty';
+      qty.textContent = values[item.id] || 0;
+      const plus = document.createElement('button');
+      plus.textContent = '+';
+      plus.onclick = ()=>{ values[item.id] = (values[item.id]||0)+1; commitValues(); };
+      stepper.append(minus, qty, plus);
+      row.appendChild(stepper);
+    } else {
+      const select = document.createElement('select');
+      select.className = 'choice-select';
+      item.choices.forEach((c,i)=>{
+        const opt = document.createElement('option');
+        opt.value = i; opt.textContent = c.label;
+        if((values[item.id]||0) === i) opt.selected = true;
+        select.appendChild(opt);
+      });
+      select.onchange = e=>{ values[item.id] = parseInt(e.target.value); commitValues(); };
+      row.appendChild(select);
+    }
+
+    const val = document.createElement('div');
+    val.className = 'item-value';
+    val.textContent = '£' + itemValue(item).toFixed(2);
+    row.appendChild(val);
+
+    itemsListEl.appendChild(row);
+  });
+}
+
+const freqTabsEl = document.getElementById('freqTabs');
+const totalDisplayEl = document.getElementById('totalDisplay');
+let activeFreqId = load('quoteriser:activeFreq', null);
+
+function renderTotals(){
+  // make sure the active tab still exists, else fall back to first
+  if(!freqs.some(f=>f.id === activeFreqId)){
+    activeFreqId = freqs[0] ? freqs[0].id : null;
+  }
+  const monthly = monthlyTotal();
+
+  freqTabsEl.innerHTML = '';
+  freqs.forEach(freq=>{
+    const btn = document.createElement('button');
+    btn.className = 'tab-btn' + (freq.id === activeFreqId ? ' active' : '');
+    btn.textContent = freq.label;
+    btn.onclick = ()=>{
+      activeFreqId = freq.id;
+      save('quoteriser:activeFreq', activeFreqId);
+      renderTotals();
+    };
+    freqTabsEl.appendChild(btn);
+  });
+
+  totalDisplayEl.innerHTML = '';
+  const active = freqs.find(f=>f.id === activeFreqId);
+  if(!active) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'total-display';
+  const big = document.createElement('div');
+  big.className = 'big-value';
+  big.textContent = '£' + frequencyPrice(active, monthly).toFixed(2);
+  const meta = document.createElement('div');
+  meta.className = 'big-meta';
+  meta.textContent = active.visitsPerYear === null
+    ? `×${active.oneOffMultiplier ?? 1} of monthly total`
+    : `${active.visitsPerYear}/yr · ${active.discountPercent||0}% discount`;
+  wrap.append(big, meta);
+  totalDisplayEl.appendChild(wrap);
+}
+
+function commitValues(){
+  save(STORAGE_VALUES, values);
+  renderItems();
+  renderTotals();
+}
+
+document.getElementById('resetBtn').onclick = ()=>{
+  items.forEach(it=> values[it.id] = 0);
+  commitValues();
+  showToast('Reset');
+};
+
+/* ---------------- Settings modal ---------------- */
+const backdrop = document.getElementById('backdrop');
+const modal = document.getElementById('settingsModal');
+const itemsEditor = document.getElementById('itemsEditor');
+const freqEditor = document.getElementById('freqEditor');
+
+function openSettings(){
+  renderItemsEditor();
+  renderFreqEditor();
+  backdrop.classList.add('open');
+  modal.classList.add('open');
+}
+function closeSettings(){
+  backdrop.classList.remove('open');
+  modal.classList.remove('open');
+  // persist + refresh main screen in case items changed
+  ensureValues();
+  save(STORAGE_ITEMS, items);
+  save(STORAGE_FREQ, freqs);
+  save(STORAGE_VALUES, values);
+  renderItems();
+  renderTotals();
+}
+document.getElementById('settingsBtn').onclick = openSettings;
+document.getElementById('closeSettings').onclick = closeSettings;
+backdrop.onclick = closeSettings;
+
+function uid(prefix){ return prefix + '_' + Math.random().toString(36).slice(2,9); }
+
+const PROTECTED_ITEM_IDS = ['window','frosted','door'];
+
+function renderItemsEditor(){
+  itemsEditor.innerHTML = '';
+  items.forEach((item, idx)=>{
+    const box = document.createElement('div');
+    box.className = 'settings-item';
+
+    // items are always counters now — coerce any leftover 'choice' items
+    if(item.type !== 'counter'){
+      item.type = 'counter';
+      if(item.multiplier === undefined) item.multiplier = 1;
+      delete item.choices;
+      values[item.id] = 0;
+    }
+
+    const row = document.createElement('div');
+    row.className = 'row';
+
+    const titleField = document.createElement('div');
+    titleField.className = 'field';
+    const titleInput = document.createElement('input');
+    titleInput.type = 'text'; titleInput.value = item.title;
+    titleInput.placeholder = 'Name';
+    titleInput.oninput = e=> item.title = e.target.value;
+    titleField.appendChild(titleInput);
+    row.appendChild(titleField);
+
+    const priceField = document.createElement('div');
+    priceField.className = 'price-field';
+    const poundSign = document.createElement('span');
+    poundSign.className = 'pound-sign';
+    poundSign.textContent = '£';
+    const priceInput = document.createElement('input');
+    priceInput.type = 'number'; priceInput.step = '0.01';
+    priceInput.value = item.multiplier !== undefined ? item.multiplier : 1;
+    priceInput.oninput = e=> item.multiplier = parseFloat(e.target.value)||0;
+    priceField.append(poundSign, priceInput);
+    row.appendChild(priceField);
+
+    if(!PROTECTED_ITEM_IDS.includes(item.id)){
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'remove-x';
+      removeBtn.textContent = '🗑';
+      removeBtn.onclick = ()=>{
+        delete values[item.id];
+        items.splice(idx,1);
+        renderItemsEditor();
+      };
+      row.appendChild(removeBtn);
+    }
+
+    box.appendChild(row);
+    itemsEditor.appendChild(box);
+  });
+}
+
+document.getElementById('addItemBtn').onclick = ()=>{
+  const id = uid('item');
+  items.push({id, title:'New Feature', type:'counter', multiplier:1});
+  values[id] = 0;
+  renderItemsEditor();
+};
+
+function renderFreqEditor(){
+  freqEditor.innerHTML = '';
+  freqs.forEach(freq=>{
+    if(freq.id === '4weekly') return; // Monthly is the fixed baseline, nothing to adjust
+
+    const box = document.createElement('div');
+    box.className = 'settings-item';
+
+    const row = document.createElement('div');
+    row.className = 'row';
+
+    const labelField = document.createElement('div');
+    labelField.className = 'field';
+    labelField.textContent = freq.label;
+    row.appendChild(labelField);
+
+    const isMultiplier = freq.visitsPerYear === null;
+    const pctField = document.createElement('div');
+    pctField.className = 'price-field pct-field';
+    const pctInput = document.createElement('input');
+    pctInput.type = 'number'; pctInput.step = '1';
+    pctInput.value = isMultiplier
+      ? Math.round((freq.oneOffMultiplier ?? 1) * 100)
+      : (freq.discountPercent || 0);
+    pctInput.oninput = e=>{
+      const v = parseFloat(e.target.value) || 0;
+      if(isMultiplier){ freq.oneOffMultiplier = v/100; }
+      else { freq.discountPercent = v; }
+    };
+    const pctSign = document.createElement('span');
+    pctSign.className = 'pound-sign';
+    pctSign.style.marginLeft = '2px';
+    pctSign.style.marginRight = '0';
+    pctSign.textContent = '%';
+    pctField.append(pctInput, pctSign);
+    row.appendChild(pctField);
+
+    box.appendChild(row);
+    freqEditor.appendChild(box);
+  });
+}
+
+document.getElementById('restoreDefaultsBtn').onclick = ()=>{
+  if(confirm('Restore feature types and discounts to defaults? Current quote amounts will reset too.')){
+    items = JSON.parse(JSON.stringify(DEFAULT_ITEMS));
+    freqs = JSON.parse(JSON.stringify(DEFAULT_FREQS));
+    values = {};
+    ensureValues();
+    renderItemsEditor();
+    renderFreqEditor();
+    showToast('Defaults restored');
+  }
+};
+
+/* ---------------- Toast ---------------- */
+let toastTimer;
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=> t.classList.remove('show'), 1400);
+}
+
+/* ---------------- Init ---------------- */
+renderItems();
+renderTotals();
+</script>
+</body>
+</html>
