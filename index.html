@@ -143,6 +143,14 @@
   <div class="modal-body">
     <button class="add-btn" id="saveHistoryBtn">+ Save current quote</button>
     <div id="historyList" style="margin-top:14px;"></div>
+
+    <div class="section-title" style="margin-top:22px;">Backup &amp; Restore</div>
+    <div id="backupStatus" style="font-size:13px;color:var(--muted);margin-bottom:10px;"></div>
+    <div class="actions">
+      <button class="btn primary" id="exportBackupBtn">⬇️ Export Backup</button>
+      <button class="btn ghost" id="importBackupLabelBtn">⬆️ Restore Backup</button>
+    </div>
+    <input type="file" id="importBackupInput" accept="application/json" style="display:none;">
   </div>
 </div>
 
@@ -501,15 +509,35 @@ document.getElementById('restoreDefaultsBtn').onclick = ()=>{
 
 /* ---------------- History ---------------- */
 const STORAGE_HISTORY = 'quoteriser:history';
+const STORAGE_LAST_BACKUP = 'quoteriser:lastBackupAt';
 let historyEntries = load(STORAGE_HISTORY, []);
 let expandedHistoryId = null;
 
 const historyBackdrop = document.getElementById('historyBackdrop');
 const historyModal = document.getElementById('historyModal');
 const historyListEl = document.getElementById('historyList');
+const backupStatusEl = document.getElementById('backupStatus');
+
+const BACKUP_REMINDER_MS = 24 * 60 * 60 * 1000; // nudge if it's been over a day
+
+function renderBackupStatus(){
+  const last = load(STORAGE_LAST_BACKUP, null);
+  if(!last){
+    backupStatusEl.innerHTML = `<span style="color:var(--warn);">You've never exported a backup — tap Export Backup below.</span>`;
+    return;
+  }
+  const ago = Date.now() - last;
+  const dateStr = new Date(last).toLocaleString();
+  if(ago > BACKUP_REMINDER_MS){
+    backupStatusEl.innerHTML = `<span style="color:var(--warn);">Last backup: ${dateStr} — it's been a while, worth exporting a fresh one.</span>`;
+  } else {
+    backupStatusEl.textContent = `Last backup: ${dateStr}`;
+  }
+}
 
 function openHistory(){
   renderHistory();
+  renderBackupStatus();
   historyBackdrop.classList.add('open');
   historyModal.classList.add('open');
 }
@@ -520,6 +548,15 @@ function closeHistory(){
 document.getElementById('historyBtn').onclick = openHistory;
 document.getElementById('closeHistory').onclick = closeHistory;
 historyBackdrop.onclick = closeHistory;
+
+function updateHistoryBtnBadge(){
+  const btn = document.getElementById('historyBtn');
+  const last = load(STORAGE_LAST_BACKUP, null);
+  const overdue = !last || (Date.now() - last) > BACKUP_REMINDER_MS;
+  btn.textContent = overdue ? '📜 History ⚠️ backup due' : '📜 History';
+}
+updateHistoryBtnBadge();
+
 
 function getRoadNameLabel(){
   if(!navigator.geolocation) return Promise.resolve(null);
@@ -665,6 +702,79 @@ function renderHistory(){
     historyListEl.appendChild(box);
   });
 }
+
+/* ---------------- Backup & Restore ---------------- */
+// Ask the browser to treat our data as "persistent" so it's less likely to be
+// auto-evicted under storage pressure. Best-effort only — it does nothing to
+// protect against the user manually clearing site data, which is what the
+// export/import backup below is actually for.
+if(navigator.storage && navigator.storage.persist){
+  navigator.storage.persist().catch(()=>{});
+}
+
+document.getElementById('exportBackupBtn').onclick = ()=>{
+  const backup = {
+    app: 'quoteriser',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    items, freqs, values, historyEntries
+  };
+  const blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `quoteriser-backup-${new Date().toISOString().slice(0,10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  save(STORAGE_LAST_BACKUP, Date.now());
+  renderBackupStatus();
+  updateHistoryBtnBadge();
+  showToast('Backup downloaded');
+};
+
+document.getElementById('importBackupLabelBtn').onclick = ()=>{
+  document.getElementById('importBackupInput').click();
+};
+
+document.getElementById('importBackupInput').onchange = (e)=>{
+  const file = e.target.files[0];
+  e.target.value = ''; // reset so picking the same file again still fires onchange
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev)=>{
+    let data;
+    try{
+      data = JSON.parse(ev.target.result);
+    }catch(err){
+      alert("Could not read that file — it doesn't look like valid backup data.");
+      return;
+    }
+    if(!data || data.app !== 'quoteriser' || !Array.isArray(data.items) || !Array.isArray(data.freqs)){
+      alert("That file doesn't look like a Quoteriser backup.");
+      return;
+    }
+    if(!confirm('Restore this backup? This will replace your current feature types, discounts, quote, and history.')) return;
+    items = data.items;
+    freqs = data.freqs;
+    values = data.values || {};
+    historyEntries = data.historyEntries || [];
+    ensureValues();
+    save(STORAGE_ITEMS, items);
+    save(STORAGE_FREQ, freqs);
+    save(STORAGE_VALUES, values);
+    save(STORAGE_HISTORY, historyEntries);
+    renderItems();
+    renderTotals();
+    renderHistory();
+    save(STORAGE_LAST_BACKUP, Date.now());
+    renderBackupStatus();
+    updateHistoryBtnBadge();
+    showToast('Backup restored');
+  };
+  reader.readAsText(file);
+};
 
 /* ---------------- Idle auto-save ---------------- */
 const IDLE_TIMEOUT_MS = 30000; // 30 seconds since the last button press
