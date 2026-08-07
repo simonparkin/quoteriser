@@ -40,6 +40,12 @@
   .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:14px;}
   .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin:0 0 10px;}
   .item-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);gap:10px;}
+  .address-row{display:flex;align-items:center;gap:8px;}
+  .address-row input{flex:1;min-width:0;background:var(--panel2);border:1px solid var(--border);color:var(--text);
+    border-radius:9px;padding:10px 12px;font-size:15px;}
+  .address-row input::placeholder{color:var(--muted);}
+  .address-row .icon-btn{flex:0 0 auto;font-size:16px;}
+  .address-row .icon-btn.loading{opacity:.55;pointer-events:none;}
   .item-row:last-child{border-bottom:none;}
   .item-title{font-size:16px;font-weight:600;flex:1;min-width:0;}
   .stepper{display:flex;align-items:center;gap:10px;}
@@ -96,6 +102,8 @@
   .price-field input{background:transparent;border:none;color:var(--text);padding:8px 0;font-size:14px;width:100%;min-width:0;}
   .price-field input:focus{outline:none;}
   .remove-x{background:none;border:none;color:var(--danger);font-size:18px;cursor:pointer;padding:2px 6px;}
+  .edit-btn{background:none;border:1px solid var(--accent);color:var(--accent);border-radius:8px;
+    cursor:pointer;padding:5px 7px;line-height:0;flex:0 0 auto;display:flex;align-items:center;justify-content:center;}
   .section-title{font-size:13px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin:18px 0 10px;}
   .add-btn{width:100%;padding:12px;border-radius:11px;border:1px dashed var(--border);background:transparent;
     color:var(--accent);font-weight:700;cursor:pointer;font-size:14px;margin-top:4px;}
@@ -105,9 +113,9 @@
   .toast.show{opacity:1;}
   .history-entry{background:var(--panel);border:1px solid var(--border);border-radius:12px;margin-bottom:10px;overflow:hidden;}
   .history-entry-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;cursor:pointer;gap:10px;}
-  .history-entry-head .h-label{font-weight:700;font-size:15px;}
+  .history-entry-head .h-label{font-weight:700;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .history-entry-head .h-date{font-size:12px;color:var(--muted);margin-top:2px;display:block;}
-  .history-entry-head .h-total{font-weight:800;color:var(--accent2);font-size:16px;white-space:nowrap;}
+  .history-entry-head .h-total{font-weight:800;color:var(--accent2);font-size:16px;white-space:nowrap;flex:0 0 auto;}
   .history-detail{padding:0 14px 14px;border-top:1px solid var(--border);display:none;}
   .history-detail.open{display:block;padding-top:10px;}
   .history-detail .hd-row{display:flex;justify-content:space-between;font-size:13px;padding:4px 0;color:var(--muted);}
@@ -126,6 +134,14 @@
 </header>
 
 <main>
+  <div class="card">
+    <h2>Address</h2>
+    <div class="address-row">
+      <input type="text" id="addressInput" placeholder="Detecting location…">
+      <button class="icon-btn" id="refreshAddressBtn" aria-label="Refresh location">🔄</button>
+    </div>
+  </div>
+
   <div class="card">
     <h2>House Features</h2>
     <div id="itemsList"></div>
@@ -366,6 +382,7 @@ function commitValues(){
 document.getElementById('resetBtn').onclick = ()=>{
   items.forEach(it=> values[it.id] = 0);
   commitValues();
+  activeStreakEntry = null;
   showToast('Reset');
 };
 
@@ -569,49 +586,111 @@ updateHistoryBtnBadge();
 
 function getRoadNameLabel(){
   if(!navigator.geolocation) return Promise.resolve(null);
-  return new Promise((resolve)=>{
+
+  const getPosition = ()=> new Promise((resolve)=>{
     navigator.geolocation.getCurrentPosition(
-      async (pos)=>{
-        try{
-          const {latitude, longitude} = pos.coords;
-          const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=17&addressdetails=1`;
-          const res = await fetch(url, {headers:{'Accept':'application/json'}});
-          const data = await res.json();
-          const a = data && data.address ? data.address : {};
-          const road = a.road || a.pedestrian || a.footway || a.residential || null;
-          resolve(road);
-        }catch(e){
-          resolve(null);
-        }
-      },
+      (pos)=> resolve(pos),
       ()=> resolve(null),
-      {enableHighAccuracy:true, timeout:8000}
+      {enableHighAccuracy:true, timeout:10000, maximumAge:0} // maximumAge:0 forces a fresh GPS fix, never a cached one
     );
   });
+
+  const reverseGeocode = async (lat, lon)=>{
+    try{
+      const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=17&addressdetails=1`;
+      const res = await fetch(url, {headers:{'Accept':'application/json'}});
+      const data = await res.json();
+      const a = data && data.address ? data.address : {};
+      return a.road || a.pedestrian || a.footway || a.residential || null;
+    }catch(e){
+      return null;
+    }
+  };
+
+  return (async ()=>{
+    let pos = await getPosition();
+    // if the fix looks poor (low accuracy / large error radius), try once more for a better one
+    if(pos && pos.coords && pos.coords.accuracy > 100){
+      const retry = await getPosition();
+      if(retry && retry.coords && (!pos.coords || retry.coords.accuracy < pos.coords.accuracy)){
+        pos = retry;
+      }
+    }
+    if(!pos) return null;
+    return reverseGeocode(pos.coords.latitude, pos.coords.longitude);
+  })();
 }
 
-document.getElementById('saveHistoryBtn').onclick = async ()=>{
-  const btn = document.getElementById('saveHistoryBtn');
-  const originalText = btn.textContent;
-  btn.textContent = 'Locating…';
-  btn.disabled = true;
-  const roadName = await getRoadNameLabel();
-  btn.textContent = originalText;
-  btn.disabled = false;
+/* ---------------- Address field ---------------- */
+const STORAGE_ADDRESS = 'quoteriser:address';
+let currentAddress = load(STORAGE_ADDRESS, '');
+const addressInput = document.getElementById('addressInput');
+const refreshAddressBtn = document.getElementById('refreshAddressBtn');
+addressInput.value = currentAddress;
 
-  const suggested = roadName || new Date().toLocaleString();
-  const label = prompt('Label this quote (edit if needed):', suggested);
-  if(label === null) return; // cancelled
-  const entry = {
+addressInput.oninput = (e)=>{
+  currentAddress = e.target.value;
+  save(STORAGE_ADDRESS, currentAddress);
+};
+
+async function refreshAddress(){
+  refreshAddressBtn.classList.add('loading');
+  const road = await getRoadNameLabel();
+  refreshAddressBtn.classList.remove('loading');
+  if(road){
+    currentAddress = road;
+    addressInput.value = currentAddress;
+    save(STORAGE_ADDRESS, currentAddress);
+  } else {
+    showToast('Could not detect location');
+  }
+}
+refreshAddressBtn.onclick = refreshAddress;
+
+// always attempt a fresh detection on open — the address is expected to
+// change every visit, so the last one saved is just a placeholder while
+// this runs, not something worth trusting on its own
+refreshAddress();
+
+// tracks the history entry currently being "topped up" by saves for this
+// same address, so repeated saves during one house visit update it in place
+// instead of piling up duplicates. Reset (a new house) clears this.
+let activeStreakEntry = null;
+
+function buildSnapshot(label){
+  return {
     id: uid('hist'),
     savedAt: Date.now(),
-    label: (label && label.trim()) ? label.trim() : suggested,
+    label,
     items: JSON.parse(JSON.stringify(items)),
     values: JSON.parse(JSON.stringify(values)),
     freqs: JSON.parse(JSON.stringify(freqs))
   };
+}
+
+function saveOrUpdateHistory(label){
+  if(activeStreakEntry && historyEntries.includes(activeStreakEntry) && activeStreakEntry.label === label){
+    // same address as the entry we're already building up — update it, don't duplicate
+    activeStreakEntry.savedAt = Date.now();
+    activeStreakEntry.items = JSON.parse(JSON.stringify(items));
+    activeStreakEntry.values = JSON.parse(JSON.stringify(values));
+    activeStreakEntry.freqs = JSON.parse(JSON.stringify(freqs));
+    save(STORAGE_HISTORY, historyEntries);
+    return activeStreakEntry;
+  }
+  const entry = buildSnapshot(label);
   historyEntries.unshift(entry);
+  activeStreakEntry = entry;
   save(STORAGE_HISTORY, historyEntries);
+  return entry;
+}
+
+document.getElementById('saveHistoryBtn').onclick = ()=>{
+  const suggested = currentAddress || new Date().toLocaleString();
+  const label = prompt('Label this quote (edit if needed):', suggested);
+  if(label === null) return; // cancelled
+  const finalLabel = (label && label.trim()) ? label.trim() : suggested;
+  saveOrUpdateHistory(finalLabel);
   renderHistory();
   showToast('Quote saved to history');
 };
@@ -648,9 +727,32 @@ function renderHistory(){
 
     const head = document.createElement('div');
     head.className = 'history-entry-head';
-    head.innerHTML = `<div><div class="h-label">${escapeHtml(entry.label)}</div>` +
-      `<span class="h-date">${new Date(entry.savedAt).toLocaleString()}</span></div>` +
-      `<div class="h-total">£${monthly.toFixed(2)}</div>`;
+
+    const left = document.createElement('div');
+    left.style.cssText = 'display:flex;align-items:center;gap:6px;min-width:0;flex:1;overflow:hidden;';
+    const labelWrap = document.createElement('div');
+    labelWrap.style.minWidth = '0';
+    labelWrap.innerHTML = `<div class="h-label">${escapeHtml(entry.label)}</div>` +
+      `<span class="h-date">${new Date(entry.savedAt).toLocaleString()}</span>`;
+    const editBtn = document.createElement('button');
+    editBtn.className = 'edit-btn';
+    editBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+    editBtn.setAttribute('aria-label', 'Edit label');
+    editBtn.onclick = (e)=>{
+      e.stopPropagation();
+      const newLabel = prompt('Edit label:', entry.label);
+      if(newLabel === null) return; // cancelled
+      entry.label = newLabel.trim() || entry.label;
+      save(STORAGE_HISTORY, historyEntries);
+      renderHistory();
+    };
+    left.append(labelWrap, editBtn);
+
+    const total = document.createElement('div');
+    total.className = 'h-total';
+    total.textContent = '£' + monthly.toFixed(2);
+
+    head.append(left, total);
     head.onclick = ()=>{
       expandedHistoryId = (expandedHistoryId === entry.id) ? null : entry.id;
       renderHistory();
@@ -692,6 +794,10 @@ function renderHistory(){
         }
       });
       commitValues();
+      currentAddress = entry.label;
+      addressInput.value = currentAddress;
+      save(STORAGE_ADDRESS, currentAddress);
+      activeStreakEntry = entry;
       closeHistory();
       showToast('Quote loaded');
     };
@@ -794,19 +900,10 @@ function armIdleTimer(){
   idleTimer = setTimeout(autoSaveToHistory, IDLE_TIMEOUT_MS);
 }
 
-async function autoSaveToHistory(){
+function autoSaveToHistory(){
   if(monthlyTotal() <= 0) return; // nothing entered yet, nothing to save
-  const roadName = await getRoadNameLabel();
-  const entry = {
-    id: uid('hist'),
-    savedAt: Date.now(),
-    label: roadName || new Date().toLocaleString(),
-    items: JSON.parse(JSON.stringify(items)),
-    values: JSON.parse(JSON.stringify(values)),
-    freqs: JSON.parse(JSON.stringify(freqs))
-  };
-  historyEntries.unshift(entry);
-  save(STORAGE_HISTORY, historyEntries);
+  const label = currentAddress || new Date().toLocaleString();
+  saveOrUpdateHistory(label);
   showToast('Auto-saved to history');
 }
 
