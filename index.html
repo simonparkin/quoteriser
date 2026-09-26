@@ -623,14 +623,18 @@ function getRoadNameLabel(){
 
 /* ---------------- Address field ---------------- */
 const STORAGE_ADDRESS = 'quoteriser:address';
+const STORAGE_ADDRESS_MODE = 'quoteriser:addressMode'; // 'gps' | 'manual'
 let currentAddress = load(STORAGE_ADDRESS, '');
+let addressMode = load(STORAGE_ADDRESS_MODE, 'gps');
 const addressInput = document.getElementById('addressInput');
 const refreshAddressBtn = document.getElementById('refreshAddressBtn');
 addressInput.value = currentAddress;
 
 addressInput.oninput = (e)=>{
   currentAddress = e.target.value;
+  addressMode = 'manual';
   save(STORAGE_ADDRESS, currentAddress);
+  save(STORAGE_ADDRESS_MODE, addressMode);
 };
 
 async function refreshAddress(){
@@ -639,18 +643,22 @@ async function refreshAddress(){
   refreshAddressBtn.classList.remove('loading');
   if(road){
     currentAddress = road;
+    addressMode = 'gps';
     addressInput.value = currentAddress;
     save(STORAGE_ADDRESS, currentAddress);
+    save(STORAGE_ADDRESS_MODE, addressMode);
   } else {
     showToast('Could not detect location');
   }
 }
-refreshAddressBtn.onclick = refreshAddress;
+refreshAddressBtn.onclick = refreshAddress; // refresh always forces a fresh GPS attempt, even in manual mode
 
-// always attempt a fresh detection on open — the address is expected to
-// change every visit, so the last one saved is just a placeholder while
-// this runs, not something worth trusting on its own
-refreshAddress();
+// auto-detect on open — but only if the address wasn't manually typed in.
+// A typed address is assumed intentional and is left alone until the
+// person taps refresh themselves or types something new.
+if(addressMode !== 'manual'){
+  refreshAddress();
+}
 
 // tracks the history entry currently being "topped up" by saves for this
 // same address, so repeated saves during one house visit update it in place
@@ -795,8 +803,10 @@ function renderHistory(){
       });
       commitValues();
       currentAddress = entry.label;
+      addressMode = 'manual';
       addressInput.value = currentAddress;
       save(STORAGE_ADDRESS, currentAddress);
+      save(STORAGE_ADDRESS_MODE, addressMode);
       activeStreakEntry = entry;
       closeHistory();
       showToast('Quote loaded');
